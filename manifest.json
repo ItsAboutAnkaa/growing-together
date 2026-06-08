@@ -3,7 +3,7 @@
   "short_name": "Growing Together",
   "description": "A living pixel-art tree that grows with your relationship.",
   "start_url": "/growing-together/",
-  "scope": "/growing-together/"
+  "scope": "/growing-together/",
   "display": "standalone",
   "background_color": "#0d1117",
   "theme_color": "#0d1117",
