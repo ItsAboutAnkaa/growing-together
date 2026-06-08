@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="theme-color" content="#0d1117"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Growing Together"/>
+  <title>Growing Together</title>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="apple-touch-icon" href="icons/icon-192.png"/>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;1,300;1,400&display=swap');
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    html,body{
+      width:100%;height:100%;overflow:hidden;
+      background:#0d1117;font-family:'Courier New',monospace;
+      touch-action:none;user-select:none;
+    }
+    #app{
+      position:fixed;inset:0;
+      display:flex;flex-direction:column;align-items:center;
+      overflow:hidden;
+    }
+    /* Canvases */
+    #skyCanvas,#partCanvas{
+      position:absolute;inset:0;width:100%;height:100%;
+    }
+    #skyCanvas{z-index:1}
+    #partCanvas{z-index:2;pointer-events:none}
+    /* Tree canvas wrapper — centred, touch target >= 48px */
+    #treeWrap{
+      position:relative;z-index:3;
+      flex-shrink:0;
+      display:flex;align-items:center;justify-content:center;
+      min-width:48px;min-height:48px;
+    }
+    #treeCanvas{
+      display:block;
+      image-rendering:pixelated;
+      image-rendering:crisp-edges;
+    }
+    /* UI overlay */
+    #ui{
+      position:relative;z-index:10;
+      width:100%;display:flex;flex-direction:column;
+      align-items:center;padding:0 24px 32px;
+      flex-shrink:0;
+    }
+    .day-num{
+      font-size:clamp(36px,10vw,56px);
+      font-weight:700;letter-spacing:-2px;
+      color:#f0e8d0;line-height:1;
+    }
+    .breakdown{
+      font-size:clamp(9px,2.5vw,11px);
+      color:rgba(240,232,208,.5);
+      letter-spacing:2.5px;margin-top:5px;text-transform:uppercase;
+    }
+    .pct{
+      font-size:clamp(8px,2vw,10px);
+      color:rgba(240,232,208,.35);
+      letter-spacing:2px;margin-top:3px;text-transform:uppercase;
+    }
+    .pbar-wrap{
+      width:clamp(120px,50vw,180px);height:2px;
+      background:rgba(240,232,208,.08);
+      border-radius:2px;margin-top:8px;overflow:hidden;
+    }
+    .pbar-fill{
+      height:100%;border-radius:2px;
+      background:rgba(255,200,80,.75);
+      transition:width .5s ease;
+    }
+    .msg{
+      font-family:'Crimson Pro',Georgia,serif;
+      font-style:italic;
+      font-size:clamp(15px,4.5vw,19px);
+      color:rgba(240,232,208,.72);
+      margin-top:12px;
+      text-align:center;
+      transition:opacity .65s ease;
+      min-height:1.6em;
+      line-height:1.5;
+    }
+    .sbadge{
+      font-size:9px;letter-spacing:3px;text-transform:uppercase;
+      color:rgba(240,232,208,.28);margin-top:14px;
+      border:.5px solid rgba(240,232,208,.12);
+      padding:3px 14px;border-radius:20px;
+    }
+    /* Settings button */
+    #settBtn{
+      position:fixed;top:max(env(safe-area-inset-top,0px),12px);right:16px;
+      z-index:100;
+      background:rgba(240,232,208,.06);
+      border:.5px solid rgba(240,232,208,.12);
+      border-radius:50%;width:40px;height:40px;
+      display:flex;align-items:center;justify-content:center;
+      cursor:pointer;color:rgba(240,232,208,.5);font-size:18px;
+    }
+    /* Settings panel */
+    #settPanel{
+      position:fixed;inset:0;z-index:200;
+      background:rgba(13,17,23,.95);
+      display:flex;flex-direction:column;
+      align-items:center;justify-content:center;
+      padding:32px 24px;
+      transform:translateY(100%);
+      transition:transform .35s cubic-bezier(.4,0,.2,1);
+    }
+    #settPanel.open{transform:translateY(0)}
+    .sett-title{
+      font-size:10px;letter-spacing:3px;text-transform:uppercase;
+      color:rgba(240,232,208,.4);margin-bottom:32px;
+    }
+    .sett-row{
+      width:100%;max-width:320px;
+      display:flex;align-items:center;justify-content:space-between;
+      border-bottom:.5px solid rgba(240,232,208,.08);
+      padding:16px 0;
+    }
+    .sett-label{font-size:13px;color:rgba(240,232,208,.7)}
+    .toggle{
+      width:44px;height:24px;border-radius:12px;
+      background:rgba(240,232,208,.1);
+      border:.5px solid rgba(240,232,208,.15);
+      position:relative;cursor:pointer;transition:background .2s;
+    }
+    .toggle.on{background:rgba(255,200,80,.4);border-color:rgba(255,200,80,.4)}
+    .toggle-knob{
+      position:absolute;top:2px;left:2px;
+      width:20px;height:20px;border-radius:50%;
+      background:rgba(240,232,208,.5);transition:left .2s,background .2s;
+    }
+    .toggle.on .toggle-knob{left:22px;background:#ffc850}
+    .sett-btn{
+      margin-top:12px;
+      width:100%;max-width:320px;padding:12px;
+      background:rgba(240,232,208,.06);
+      border:.5px solid rgba(240,232,208,.12);
+      border-radius:12px;cursor:pointer;
+      font-size:12px;letter-spacing:1.5px;text-transform:uppercase;
+      color:rgba(240,232,208,.5);text-align:center;
+    }
+    .sett-btn.danger{
+      border-color:rgba(220,80,80,.3);color:rgba(220,120,100,.6);
+      background:rgba(220,80,80,.05);
+    }
+    .sett-close{
+      margin-top:32px;
+      font-size:9px;letter-spacing:3px;text-transform:uppercase;
+      color:rgba(240,232,208,.3);cursor:pointer;padding:8px;
+    }
+    /* Memory rings modal */
+    #ringsPanel{
+      position:fixed;bottom:0;left:0;right:0;z-index:200;
+      background:#141a24;border-radius:24px 24px 0 0;
+      padding:0 0 max(env(safe-area-inset-bottom,0px),24px);
+      transform:translateY(100%);transition:transform .35s cubic-bezier(.4,0,.2,1);
+      max-height:80vh;overflow-y:auto;
+    }
+    #ringsPanel.open{transform:translateY(0)}
+    .rings-handle{
+      width:40px;height:3px;background:rgba(240,232,208,.2);
+      border-radius:2px;margin:12px auto 0;
+    }
+    .rings-title{
+      text-align:center;font-size:10px;letter-spacing:3px;
+      text-transform:uppercase;color:rgba(240,232,208,.4);
+      margin:18px 0 4px;
+    }
+    .rings-sub{
+      text-align:center;font-family:Georgia,serif;font-style:italic;
+      font-size:11px;color:rgba(240,232,208,.25);margin-bottom:14px;
+    }
+    .ring-row{
+      display:flex;align-items:center;gap:14px;
+      padding:10px 24px;
+    }
+    .ring-dot{
+      width:32px;height:32px;border-radius:50%;flex-shrink:0;
+      display:flex;align-items:center;justify-content:center;
+      font-size:14px;
+      border:1px solid rgba(240,232,208,.15);
+    }
+    .ring-dot.done{
+      border-color:rgba(255,200,80,.5);
+      background:rgba(255,200,80,.1);
+    }
+    .ring-dot.current{border-color:rgba(240,232,208,.3)}
+    .ring-info{}
+    .ring-yr{font-size:13px;font-weight:600;color:rgba(240,232,208,.25);letter-spacing:.5px}
+    .ring-yr.done{color:rgba(240,232,208,.8)}
+    .ring-lbl{font-size:11px;font-family:Georgia,serif;font-style:italic;color:rgba(240,232,208,.15)}
+    .ring-lbl.done{color:rgba(240,232,208,.45)}
+    #overlay{display:none;position:fixed;inset:0;z-index:199}
+    #overlay.show{display:block}
+    /* Install banner for iOS */
+    #installBanner{
+      position:fixed;bottom:max(env(safe-area-inset-bottom,0px),16px);
+      left:16px;right:16px;z-index:300;
+      background:rgba(20,26,36,.96);
+      border:.5px solid rgba(240,232,208,.15);
+      border-radius:16px;padding:14px 16px;
+      display:none;align-items:center;gap:12px;
+    }
+    #installBanner.show{display:flex}
+    .install-text{font-size:12px;color:rgba(240,232,208,.6);line-height:1.5;flex:1}
+    .install-close{font-size:20px;color:rgba(240,232,208,.3);cursor:pointer;padding:4px}
+  </style>
+</head>
+<body>
+<div id="app">
+  <canvas id="skyCanvas"></canvas>
+  <canvas id="partCanvas"></canvas>
+
+  <div id="treeWrap">
+    <canvas id="treeCanvas"></canvas>
+  </div>
+
+  <div id="ui">
+    <div class="day-num" id="dayNum">—</div>
+    <div class="breakdown" id="breakdown">Loading…</div>
+    <div class="pct" id="pctText"></div>
+    <div class="pbar-wrap"><div class="pbar-fill" id="pbar"></div></div>
+    <div class="msg" id="msgEl">&nbsp;</div>
+    <div class="sbadge" id="badge">—</div>
+  </div>
+</div>
+
+<!-- Settings button -->
+<div id="settBtn" onclick="openSett()">⚙</div>
+
+<!-- Settings panel -->
+<div id="settPanel">
+  <div class="sett-title">Settings</div>
+  <div class="sett-row">
+    <div class="sett-label">Particles</div>
+    <div class="toggle on" id="togPart" onclick="toggleSetting('particles')">
+      <div class="toggle-knob"></div>
+    </div>
+  </div>
+  <div class="sett-row">
+    <div class="sett-label">Animations</div>
+    <div class="toggle on" id="togAnim" onclick="toggleSetting('animations')">
+      <div class="toggle-knob"></div>
+    </div>
+  </div>
+  <div class="sett-btn danger" onclick="confirmReset()">Reset App</div>
+  <div class="sett-close" onclick="closeSett()">✕ close</div>
+</div>
+
+<!-- Memory rings panel -->
+<div id="ringsPanel">
+  <div class="rings-handle"></div>
+  <div class="rings-title">Memory Rings</div>
+  <div class="rings-sub">Long press the tree to visit anytime</div>
+  <div id="ringsList"></div>
+  <div style="height:16px"></div>
+</div>
+
+<!-- Overlay (closes modals) -->
+<div id="overlay" onclick="closeAll()"></div>
+
+<!-- iOS install hint -->
+<div id="installBanner">
+  <div class="install-text">
+    Install this app: tap <strong>Share ↑</strong> then <strong>"Add to Home Screen"</strong>
+  </div>
+  <div class="install-close" onclick="dismissInstall()">✕</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════════════════════════
+const START       = new Date(2024, 4, 13); // 13 May 2024
+const TOTAL_DAYS  = 3653;
+const MSG_POOL    = 4096;
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MESSAGES  (pool of 500 — looped over 4096 deterministically)
+// ═══════════════════════════════════════════════════════════════════════════
+const MSGS = [
+"Growing quietly together 🌱","Roots reaching deeper today","Another leaf on our story 🍃",
+"Still reaching for the light","One more sunrise together ☀️","Strong roots, gentle growth",
+"Spring remembers us 🌸","Every day adds another ring","The wind knows our story",
+"The branches hold every season","Growing through every weather","One more day, one more bloom",
+"Our forest begins with one seed","A little taller than yesterday","The sky feels closer today",
+"Roots run deeper than words","Leaves of quiet joy 🍃","The tree holds our time",
+"Seasons pass, we remain","Each dawn a small renewal","Bark carries silent years",
+"Light through our branches","Growing into something beautiful","Still writing our story",
+"The earth knows us now","Time blooms slowly here","Between us, a forest grows",
+"Quiet days, deep roots","Every season belongs to us","Two hearts, one tree 🌳",
+"Morning dew on every leaf","The canopy is ours alone","No storm uproots what is deep",
+"Patience is a kind of love","We grow in all directions","Peace lives in steady growth",
+"The tree breathes with us","Another ring around our heart","Tender shoots, lasting love",
+"The horizon holds our story","Rooted, reaching, remaining","Sun and shade, together",
+"The softest growth is truest","Love is a long season","We are perennial",
+"Petal by petal, year by year","Shade we made together","We shelter each other 🌿",
+"The branches hold our weight","Deeply planted, slowly grown","Every leaf a small promise",
+"Growing where we are planted","Our roots intertwine below","This tree is ours to tend",
+"Spring is patient like love","Still standing after storms","One more layer, one more year",
+"The sap rises quietly","Love needs time to mature","We are unhurried and sure",
+"Warmth stays in the bark","Rain remembered, sun cherished","A forest of two",
+"Reaching together, always","Gentle and unbreakable","The roots anchor everything",
+"What we planted keeps growing","Each season deepens us","The ground holds our beginning",
+"We are made of time","The canopy catches light for us","Still flowering, still true",
+"Silence between us is full","What grows slowly, lasts","The trunk remembers every year",
+"A life built leaf by leaf","We belong to this tree","Growing is our language",
+"The blossoms return each spring","Never rushed, never lost","The earth is patient with us",
+"One seed, one story, one tree","Soft light through the leaves","Even winter holds a promise",
+"The bark keeps every memory","We are the forest's beginning","Another petal finds the ground",
+"The branches remember your name","Something beautiful, quietly grown","Deep roots make tall trees",
+"The tree knows all our seasons","We grow toward each other","Love like a ring of wood",
+"Each year adds a quiet layer","Mornings belong to us now","The tree grows in our silence",
+"What we tend, we keep","Love that leans into the wind","The roots go where we cannot see",
+"We are unhurried and whole","Another day, another ring","The canopy remembers every summer",
+"Stillness is a kind of growth","Time makes the bark softer","We are the tree and its shade",
+"Light finds the deepest leaves","One more morning, one more us","The seed was only the beginning",
+"Every storm taught us something","The soil holds our earliest days","A forest starts with one quiet moment",
+"The roots know before we do","Strength built over silent years","Each leaf a whispered yes",
+"We have grown past counting","The tree speaks in seasons","Rain and sun made us this",
+"Another layer, invisible and true","Growth asks for nothing but time","The wind passes, the roots hold",
+"We are older than we feel","The canopy is woven of days","A tree remembers every rain",
+"Love is the sap, slow and sure","Something is always blooming here","The trunk is our shared spine",
+"Every knot in the bark, a story","We face the same sun together","The roots reach for each other",
+"Seasons change, we deepen","Each year widens our rings","The tree is our oldest friend",
+"We planted this in hope","The blossoms were always coming","The leaves do not hurry",
+"We have been here before the seasons","The forest knows our footsteps","Quiet love, deep roots",
+"The sky opened just for this","What grows in silence lasts longest","Every dawn is a small anniversary",
+"The earth gave us a place to grow","A tree full of our days","The world is gentler beneath branches",
+"We are all the seasons at once","Love like the growth of a ring","The light through our leaves is soft",
+"Every bend in the trunk, a memory","Growing up, growing together","Still here, still growing",
+"The tree does not forget","What we are cannot be uprooted","We are the oldest new thing",
+"Each ring holds a year of us","The canopy grew around us","We are rooted in each other",
+"The soil remembers the seed","Every leaf is a small gift","The trunk bends but does not break",
+"We are deeper than we were","The forest is our longer story","Growth is the shape of love",
+"The bark holds the years gently","Every branch chose its own direction","We are the sum of our seasons",
+"The tree is still growing","Another quiet day made sacred","We outlast the weather",
+"The roots go further every year","The canopy fills in slowly","Love is a perennial thing",
+"We have added another ring","The tree has learned our weight","Each morning clears the bark",
+"We grow toward the same light","The branches reach and find each other","One more layer of us",
+"The seed is long gone, the tree remains","We are thicker than before","The shade is cooler each year",
+"Every leaf reflects our sky","The wind sings in our branches","We are the color of the season",
+"Another petal, another day","The tree is writing our story","We have been growing all along",
+"The roots are the deepest part","Each year the canopy widens","The trunk is steady now",
+"We are older and more ourselves","The leaves catch the morning light","Growth is a quiet act of faith",
+"We are tall enough to shelter","The tree is our longest sentence","Every day is a new ring",
+"The branches hold the sky open","We are the warmth under the tree","The bark has our years in it",
+"Love grows where it is tended","The tree is our truest portrait","We have lived every season",
+"The roots reach past where we started","Another day, another leaf","The canopy is almost whole",
+"We are the shade we once needed","The tree is full of small miracles","Every branch is a direction chosen",
+"We are unhurried and growing","The light loves the leaves","The roots go down while we rise",
+"A tree is time made visible","We are layered, like wood","The forest knows our anniversary",
+"Every season has been ours","The tree is patient with us","We are shaped by what we weathered",
+"The blossoms never really leave","Each ring is a year survived","The trunk holds us upright",
+"We are the height of our days","The roots remember the rain","Every leaf turned toward us",
+"The canopy is our shared sky","We are still planting seeds","The tree speaks only in growth",
+"Another year in the rings","The bark is our longest record","We are the forest's quiet center",
+"Love is the reason for the rings","The tree is our witness","We have grown past our beginning",
+"The leaves tell the season","Every branch adds to the whole","We are deep-rooted and reaching",
+"The canopy holds the memory of sun","The roots ask nothing but to hold","We are all bark and blossom",
+"The tree has learned our seasons","Every spring is a letter from us","The trunk is straight with years",
+"We are the ring inside the ring","The forest started here","Another petal, another memory",
+"The branches are full of sky","We have grown into each other","The bark softens with the years",
+"Every morning the tree is taller","We are the season's favorite","The roots teach patience",
+"Each leaf is a quiet day","The canopy is our conversation","Love like sap — slow, sweet, sure",
+"We are as old as our first day","The tree is full of our weather","Every ring a year we kept",
+"The branches bend but stay","We are growing still","The soil gave us everything",
+"Another dawn through the branches","The trunk is woven of years","We are the warmth in the wood",
+"Each spring the blossoms remember","The roots are longer than we know","Love is the name of our tree",
+"We are still here, still flowering","The canopy is made of days","Every knot holds a story",
+"The tree is our living calendar","We are rooted in something real","The bark has been patient with us",
+"Each leaf a word in our language","The branches make a map of years","We are the sum of all our seasons",
+"The roots go where love goes","Another ring in the quiet wood","The tree is our oldest chapter",
+"We are shaped by every storm","The canopy gives us shade to grow","Every bloom returns without asking",
+"The trunk is a record of time","We are still in the early rings","The leaves know when to let go",
+"Love is patient like a tree","We have added to the forest","The roots remember the first day",
+"Each season we are more ourselves","The branches carry everything","We are the tree and the time",
+"The bark is our shared skin","Every ring a quiet celebration","The canopy is still expanding",
+"We are rooted in the same earth","The tree knows no urgency","Another day written in wood",
+"The leaves reach for the same sky","We are the living part of time","The roots go deeper than doubt",
+"Each year the shade grows wider","The trunk is full of old winters","We are still the youngest ring",
+"The forest holds our whole story","Every petal fell and came back","The branches are our longest arms",
+"We are growing in all directions","The bark tells time better than clocks","Each dawn the tree is a little more",
+"The roots are our foundation","Love is counted in rings, not days","We are the tree's best year",
+"The canopy is a crown we share","Every leaf a day we lived","The trunk is straight and sure",
+"We are what the seed became","The roots make the height possible","Another blossom, another spring",
+"The tree has our initials now","We are deeper and taller","The bark holds the cold winters",
+"Each ring a promise kept","The branches grow toward us","We are the shade we give each other",
+"The forest will remember this","Every knot is a year we loved","The tree is faithful like time",
+"We are old enough to be timber","The roots anchor the whole story","Each season the canopy is fuller",
+"The trunk leans into the future","We are made of weather and warmth","Another ring, another year of this",
+"The leaves are the tree's applause","We are the growth we chose","The bark holds nothing but years",
+"Each branch a direction we took","The canopy is our gathered days","Love leaves rings in the wood",
+"We are the tree's favorite season","The roots are quiet and certain","Every spring we are rewritten",
+"The trunk holds up all we built","We are the slow kind of brave","The forest is the sum of seeds",
+"Each ring is a year of yes","The branches have learned to wait","We are older and not afraid",
+"The bark grows thicker with love","Another dawn in our canopy","The tree is patient like us",
+"We are rooted and ready","The roots hold the history","Each leaf a quiet thank you",
+"The canopy remembers every summer","Love is a tree that keeps growing","We are still adding rings",
+"The trunk is thick with time","Every bloom is an anniversary","The branches are full of our years",
+"We are the tree at its best","The soil holds us like a secret","Each dawn is a new ring beginning",
+"The roots are the real story","Love grows rings we cannot count","We are the slow beauty of wood",
+"The canopy is our life's work","Every season is a gift we kept","The tree is still becoming",
+"We are rooted in what matters","The bark is the story's cover","Each ring a year we chose",
+"The branches hold the seasons lightly","We are the heart of the forest","The roots run through everything",
+"Another year in the living wood","The leaves remember every wind","We are the tree's deepest ring",
+"The trunk is tall with years","Every branch an answered question","The canopy is our shared ceiling",
+"Love is what the rings are made of","We are the tree's quiet triumph","The roots give the height meaning",
+"Each season a page in our book","The bark holds every year tenderly","We are growing toward the light",
+"The forest began with us","Another ring in the heart of the tree","The branches reach past the years",
+"We are as deep as we are tall","The leaves turn gold for us","Every ring is a year we shared",
+"The trunk is our common spine","We are the living record","The roots know where we started",
+"Each spring the tree begins again","The canopy holds the light for us","Love grows while we sleep",
+"We are the rings inside the rings","The bark is full of our seasons","Every blossom is a small return",
+"The tree knows our name","We are the forest in a single tree","The roots are still going down",
+"Another year woven into wood","The branches are our living arms","We are taller than our beginning",
+"The trunk remembers every spring","Each ring a year of warmth","The canopy is our patient witness",
+"Love is the longest ring","We are the shade the world needed","The roots hold our first promise",
+"Every leaf a quiet persistence","The tree is our best metaphor","We are the growth that chose itself",
+"The bark is smooth where love rests","Each branch a year reached for","The forest began with this tree",
+"We are old enough to know","The roots go down to the beginning","Another ring in the quiet core",
+"The leaves are still turning toward light","We are the tree at full height","The trunk is our shared history",
+"Every ring is a year of growing","The canopy is complete and still growing","Love is counted in the wood",
+"We are the longest story the tree tells","The roots are the deepest love","Each season the tree is more beautiful",
+"The bark holds every year we gave","We are the ring the tree was growing toward","The branches have found their shape",
+"Another dawn, another ring beginning","The tree is full of our years now","We are the heart of the heartwood",
+"The roots have forgotten where they started","Each leaf a small act of faith","The canopy is everything we planted",
+"Love is the grain in the wood","We are the tree's longest ring","The trunk is steady as our love",
+"Every ring is a year of this","The forest is full of us now","The branches carry the seasons home",
+"We are the tree that time made","The roots are the quiet part of love","Each spring comes back for us",
+"The bark holds the shape of years","We are the ring at the center","The canopy is the sum of our days",
+"Love grows a ring around everything","We are the tree and we are home","Still growing, still us 🌱"
+];
+
+const MILESTONES = {
+  100:"One hundred days of us 🌿",
+  365:"One year, and still growing ❤️",
+  500:"Five hundred days of roots",
+  730:"Two years — the canopy widens 🌿",
+  1000:"A thousand days, one tree 🌳",
+  1095:"Three years of quiet bloom 🌸",
+  1460:"Four years in full bloom",
+  1826:"Halfway through our decade 🌲",
+  2191:"Six years — wide and steady",
+  2556:"Seven years — a full canopy",
+  2922:"Eight years, still reaching up",
+  3287:"Nine years, roots run deep",
+  3653:"Ten years — majestic together 🌳✨"
+};
+
+const RING_ICONS  = ['🌱','🌿','🌳','🌲','🌲','🌲','🌲','🌲','🌲','🌲'];
+const RING_LABELS = [
+  'The first tender year','Roots finding their way','The canopy begins',
+  'Four seasons learned','Halfway through our decade','The shade grows wider',
+  'A full and steady canopy','Deep into the forest','Almost a decade of rings',
+  'Ten years — fully grown'
+];
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SEASON / PHASE HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+function getSeason(d){
+  const m=d.getMonth(),dd=d.getDate();
+  if((m===2&&dd>=20)||m===3||m===4||(m===5&&dd<21))return'spring';
+  if((m===5&&dd>=21)||m===6||m===7||(m===8&&dd<23))return'summer';
+  if((m===8&&dd>=23)||m===9||m===10||(m===11&&dd<21))return'autumn';
+  return'winter';
+}
+function getPhase(h){
+  if(h>=5&&h<8)return'dawn';
+  if(h>=8&&h<19)return'day';
+  if(h>=19&&h<21)return'dusk';
+  return'night';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PALETTES
+// ═══════════════════════════════════════════════════════════════════════════
+const SKY={
+  spring:{
+    dawn: {t:'#1a2035',b:'#3a4a6a',gt:'#1e2e12',gb:'#0c140a',stars:false,moon:false},
+    day:  {t:'#1a3050',b:'#2e5060',gt:'#1e2e12',gb:'#0c140a',stars:false,moon:false},
+    dusk: {t:'#2a1820',b:'#3a2a30',gt:'#1a2010',gb:'#0c1008',stars:false,moon:false},
+    night:{t:'#0d1525',b:'#1a2035',gt:'#141e0c',gb:'#080c05',stars:true,moon:true},
+  },
+  summer:{
+    dawn: {t:'#1a2840',b:'#2a4050',gt:'#162a0c',gb:'#0a0e06',stars:false,moon:false},
+    day:  {t:'#0c1e38',b:'#1a3050',gt:'#162a0c',gb:'#0a0e06',stars:false,moon:false},
+    dusk: {t:'#201420',b:'#301e28',gt:'#122008',gb:'#080c04',stars:false,moon:false},
+    night:{t:'#080e1a',b:'#101828',gt:'#0e1e08',gb:'#060a04',stars:true,moon:true},
+  },
+  autumn:{
+    dawn: {t:'#1e1215',b:'#2e1e20',gt:'#1e1408',gb:'#100c04',stars:false,moon:false},
+    day:  {t:'#18100e',b:'#281818',gt:'#1e1408',gb:'#100c04',stars:false,moon:false},
+    dusk: {t:'#28100c',b:'#381a14',gt:'#1a1006',gb:'#0c0804',stars:false,moon:false},
+    night:{t:'#100a0c',b:'#18100e',gt:'#160e06',gb:'#0a0804',stars:true,moon:true},
+  },
+  winter:{
+    dawn: {t:'#141828',b:'#202838',gt:'#141824',gb:'#0c1018',stars:false,moon:false},
+    day:  {t:'#0e1428',b:'#1a2040',gt:'#141824',gb:'#0c1018',stars:false,moon:false},
+    dusk: {t:'#1a1430',b:'#241a38',gt:'#101420',gb:'#080c14',stars:false,moon:false},
+    night:{t:'#080c1c',b:'#10142a',gt:'#0c1020',gb:'#060810',stars:true,moon:true},
+  },
+};
+const TREE_PAL={
+  spring:{leaf:'#72c840',leafL:'#a0e060',trunk:'#5c3818',bark:'#7a4e28',flower:'#ffb3c8',flowerC:'#fff0f4',soil:'#2a1e10'},
+  summer:{leaf:'#38a020',leafL:'#58c838',trunk:'#4e3214',bark:'#6a4422',flower:'#fff176',flowerC:'#ffff99',soil:'#241a0c'},
+  autumn:{leaf:'#c06818',leafL:'#e09020',trunk:'#4a3010',bark:'#664228',flower:'#e05820',flowerC:'#ff8040',soil:'#1e1008'},
+  winter:{leaf:'#2a3840',leafL:'#3a4a52',trunk:'#382e24',bark:'#504038',flower:'#c8dce8',flowerC:'#e0eef8',soil:'#181c24'},
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════════════════
+const state={
+  particles:true,
+  animations:true,
+};
+function loadSettings(){
+  try{
+    const s=JSON.parse(localStorage.getItem('gt_settings')||'{}');
+    state.particles = s.particles!==undefined ? s.particles : true;
+    state.animations= s.animations!==undefined? s.animations: true;
+  }catch(e){}
+}
+function saveSettings(){
+  localStorage.setItem('gt_settings',JSON.stringify({particles:state.particles,animations:state.animations}));
+}
+loadSettings();
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CANVAS SETUP
+// ═══════════════════════════════════════════════════════════════════════════
+const skyC  = document.getElementById('skyCanvas');
+const partC = document.getElementById('partCanvas');
+const treeC = document.getElementById('treeCanvas');
+const skyX  = skyC.getContext('2d');
+const partX = partC.getContext('2d');
+const treeX = treeC.getContext('2d');
+
+let W,H,treeSize;
+
+function layout(){
+  W=window.innerWidth; H=window.innerHeight;
+  skyC.width=partC.width=W;
+  skyC.height=partC.height=H;
+  // Tree takes ~80% width, max 340px, leave room for UI below
+  treeSize=Math.min(Math.round(W*0.85), Math.round(H*0.46), 340);
+  treeC.width=treeC.height=treeSize;
+  document.getElementById('treeWrap').style.width=treeSize+'px';
+  document.getElementById('treeWrap').style.height=treeSize+'px';
+}
+layout();
+window.addEventListener('resize',()=>{layout();});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TIME  (reads only from system clock — no user manipulation possible)
+// ═══════════════════════════════════════════════════════════════════════════
+function getRealNow(){ return new Date(); }
+function getRawElapsed(){
+  const now=getRealNow();
+  const ms=now.setHours(0,0,0,0)-START.setHours(0,0,0,0);
+  START.setHours(0,0,0,0); // restore after mutation
+  return Math.max(0, Math.floor(ms/86400000));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MESSAGES
+// ═══════════════════════════════════════════════════════════════════════════
+function getMsg(rawDays, date){
+  if(MILESTONES[rawDays]) return MILESTONES[rawDays];
+  if(date.getDate()===13 && date.getMonth()===4 && date.getFullYear()>2024){
+    return 'Year '+(date.getFullYear()-2024)+' — still growing together 🌸';
+  }
+  if(rawDays>0 && rawDays%1000===0) return rawDays+' days of growing together 🌳';
+  if(rawDays>0 && rawDays%500===0)  return rawDays+' days — rooted and strong';
+  if(rawDays>0 && rawDays%100===0)  return rawDays+' days of quiet bloom 🌿';
+  const epoch=new Date(2000,0,1);
+  const ds=Math.floor((date-epoch)/86400000);
+  return MSGS[ds % MSG_POOL % MSGS.length];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DATE BREAKDOWN
+// ═══════════════════════════════════════════════════════════════════════════
+function breakdown(rawDays){
+  const end=new Date(START.getTime()+rawDays*86400000);
+  let y=end.getFullYear()-START.getFullYear();
+  let mo=end.getMonth()-START.getMonth();
+  let d=end.getDate()-START.getDate();
+  if(d<0){mo--;d+=new Date(end.getFullYear(),end.getMonth(),0).getDate();}
+  if(mo<0){y--;mo+=12;}
+  const p=[];
+  if(y>0) p.push(y+(y===1?' Year':' Years'));
+  if(mo>0)p.push(mo+(mo===1?' Month':' Months'));
+  if(d>0||p.length===0)p.push(d+(d===1?' Day':' Days'));
+  return p.join(' • ');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  EASING
+// ═══════════════════════════════════════════════════════════════════════════
+function ease(t){return t*t*(3-2*t);}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SKY PAINTER
+// ═══════════════════════════════════════════════════════════════════════════
+function drawSky(season, phase, animT, daySeed){
+  const p=SKY[season][phase];
+  // Sky gradient
+  const sg=skyX.createLinearGradient(0,0,0,H*0.65);
+  sg.addColorStop(0,p.t); sg.addColorStop(1,p.b);
+  skyX.fillStyle=sg; skyX.fillRect(0,0,W,H);
+  // Moon
+  if(p.moon){
+    const mx=Math.round(W*.78), my=Math.round(H*.10);
+    skyX.fillStyle='rgba(210,225,245,.28)'; skyX.beginPath(); skyX.arc(mx,my,20,0,Math.PI*2); skyX.fill();
+    skyX.fillStyle='rgba(210,225,245,.10)'; skyX.beginPath(); skyX.arc(mx,my,30,0,Math.PI*2); skyX.fill();
+    skyX.fillStyle='rgba(210,225,245,.05)'; skyX.beginPath(); skyX.arc(mx,my,42,0,Math.PI*2); skyX.fill();
+  }
+  // Stars
+  if(p.stars){
+    const seed=daySeed*13;
+    for(let i=0;i<80;i++){
+      const sx=((seed*137+i*373)%W);
+      const sy=((seed*211+i*179)%(H*.55));
+      const twinkle=.3+.7*((Math.sin(animT*Math.PI*2+i*.8)+1)/2);
+      const bright=(i%7===0)?.9:.25+(i%3)*.15;
+      skyX.fillStyle=`rgba(255,255,255,${bright*twinkle})`;
+      skyX.fillRect(Math.round(sx),Math.round(sy),1,1);
+      if(i%12===0){
+        skyX.fillStyle=`rgba(255,255,255,${bright*twinkle*.3})`;
+        skyX.fillRect(Math.round(sx)-1,Math.round(sy),3,1);
+        skyX.fillRect(Math.round(sx),Math.round(sy)-1,1,3);
+      }
+    }
+  }
+  // Ground
+  const gg=skyX.createLinearGradient(0,H*.60,0,H);
+  gg.addColorStop(0,p.gt); gg.addColorStop(1,p.gb);
+  skyX.fillStyle=gg; skyX.fillRect(0,H*.60,W,H);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TREE PAINTER
+// ═══════════════════════════════════════════════════════════════════════════
+function px(n){return Math.round(n);}
+function pxRect(ctx,x,y,w,h,c){
+  ctx.fillStyle=c;
+  ctx.fillRect(px(x),px(y),Math.max(1,px(w)),Math.max(1,px(h)));
+}
+
+function drawTree(progress, season, animT){
+  treeX.clearRect(0,0,treeSize,treeSize);
+  const pal=TREE_PAL[season];
+  const ep=ease(Math.min(1,progress));
+  const cx=px(treeSize/2), base=px(treeSize*.9);
+
+  if(progress===0){ drawSprout(cx,base,pal,animT); return; }
+
+  const trunkH=px(6+ep*(treeSize*.46));
+  const trunkW=px(1+ep*9);
+  // Big tree barely sways; sapling sways more
+  const swayAmp=state.animations ? 1.8*(1-ep*.75) : 0;
+  const sway=Math.sin(animT*.28)*swayAmp;
+
+  // Roots
+  if(ep>.25){
+    const rc=px(2+ep*4);
+    for(let i=0;i<rc;i++){
+      const dir=i%2===0?1:-1;
+      const len=px(ep*14);
+      for(let r=0;r<len;r++){
+        pxRect(treeX, cx+dir*(trunkW/2+r*.55), base+r*.35, 2, 1, r%2===0?pal.bark:pal.trunk);
+      }
+    }
+  }
+  // Trunk
+  for(let y=0;y<trunkH;y++){
+    const extra=y<trunkH*.1?(trunkH*.1-y)*.3:0;
+    const w2=trunkW+extra;
+    const ox=sway*(y/trunkH);
+    pxRect(treeX, cx-w2/2+ox-1, base-y-1, w2+2, 2, pal.bark);
+    pxRect(treeX, cx-w2/2+ox,   base-y,   w2,   1, pal.trunk);
+    if(y%8===0&&ep>.3) pxRect(treeX,cx-w2/2+ox,base-y,1,1,'rgba(0,0,0,.15)');
+  }
+
+  const tipX=cx+sway*.9, tipY=base-trunkH;
+  const maxD=Math.min(px(1.5+ep*4.5),5);
+  const blen=3+ep*(treeSize*.17);
+  const bc=px(1+ep*3);
+
+  for(let i=0;i<bc;i++){
+    const ratio=bc===1?.5:i/(bc-1);
+    const sy2=tipY+px(trunkH*(.08+ratio*.55));
+    const spread=(i-(bc-1)/2)*.6;
+    branch(tipX,sy2,blen,Math.PI/2+spread,0,maxD,sway,ep,pal,animT,season);
+  }
+  branch(tipX,tipY,blen,Math.PI/2,0,maxD,sway,ep,pal,animT,season);
+}
+
+function branch(x,y,len,angle,depth,maxD,sway,ep,pal,animT,season){
+  if(depth>maxD||len<1.5)return;
+  const bs=sway*.06*(maxD-depth);
+  const ex=x+Math.cos(angle)*len+bs;
+  const ey=y-Math.sin(angle)*len;
+  const bw=Math.max(1,px((maxD-depth+1)*.65));
+  treeX.strokeStyle=depth<2?pal.bark:pal.trunk;
+  treeX.lineWidth=bw;
+  treeX.beginPath(); treeX.moveTo(px(x),px(y)); treeX.lineTo(px(ex),px(ey)); treeX.stroke();
+  if(depth<maxD){
+    const sp=.32+ep*.22;
+    branch(ex,ey,len*.67,angle+sp,depth+1,maxD,sway,ep,pal,animT,season);
+    branch(ex,ey,len*.67,angle-sp,depth+1,maxD,sway,ep,pal,animT,season);
+    if(ep>.45&&depth<maxD-1) branch(ex,ey,len*.5,angle,depth+1,maxD,sway,ep,pal,animT,season);
+  }
+  if(depth>=maxD-1){
+    const drift=state.animations?Math.sin(animT*.22+depth*1.3+angle)*.6*(1-ep*.5):0;
+    const lc=px(2+ep*9), ls=Math.max(2,px(2+ep*5));
+    for(let i=0;i<lc;i++){
+      const lx=ex+Math.sin(i*2.3+angle)*ls*2.2+drift;
+      const ly=ey+Math.cos(i*1.7+depth)*ls*2.2;
+      pxRect(treeX,lx,ly,ls,ls,i%4===0?pal.leafL:pal.leaf);
+      if(ep>.5&&i%5===0) pxRect(treeX,lx+1,ly+1,ls-1,ls-1,pal.leafL);
+    }
+    if(season==='spring'&&ep>.08){
+      const fc=px(ep*4);
+      for(let i=0;i<fc;i++){
+        const fx=ex+Math.sin(i*3.1+animT*.12)*ls*1.5;
+        const fy=ey+Math.cos(i*2.4+animT*.10)*ls*1.5;
+        pxRect(treeX,fx,fy,3,3,pal.flower);
+        pxRect(treeX,fx+1,fy+1,1,1,pal.flowerC);
+      }
+    }
+    if(season==='winter'&&ep>.1){
+      treeX.fillStyle='rgba(200,220,240,.5)';
+      treeX.fillRect(px(ex-1),px(ey-1),3,1);
+      treeX.fillRect(px(ex),px(ey-2),1,3);
+    }
+  }
+}
+
+function drawSprout(cx,base,pal,animT){
+  const breathe=state.animations?Math.sin(animT*.35)*.5:0;
+  const sw=state.animations?Math.sin(animT*.22)*.8:0;
+  // Soil
+  for(let i=-4;i<=4;i++) pxRect(treeX,cx+i*2-1,base,2,2,pal.soil);
+  // Stem
+  pxRect(treeX,cx-1,base-14,2,14,pal.bark);
+  pxRect(treeX,cx-2,base-12,4,2,pal.bark);
+  const st=base-14, lR=sw*.8, lL=-sw*.7;
+  // Right leaf
+  pxRect(treeX,cx+2+lR,st-8+breathe,4,3,pal.leaf);
+  pxRect(treeX,cx+3+lR,st-10+breathe,3,2,pal.leaf);
+  pxRect(treeX,cx+4+lR,st-11+breathe,2,2,pal.leaf);
+  pxRect(treeX,cx+3+lR,st-9+breathe,2,2,pal.leafL);
+  // Left leaf
+  pxRect(treeX,cx-6+lL,st-6+breathe*.7,4,3,pal.leaf);
+  pxRect(treeX,cx-7+lL,st-8+breathe*.7,3,2,pal.leaf);
+  pxRect(treeX,cx-7+lL,st-9+breathe*.7,2,2,pal.leaf);
+  pxRect(treeX,cx-6+lL,st-7+breathe*.7,2,2,pal.leafL);
+  // Tip bud
+  const tb=state.animations?Math.sin(animT*.30)*.4:0;
+  pxRect(treeX,cx-1,st-5+tb,2,2,pal.leafL);
+  pxRect(treeX,cx,st-7+tb,1,2,pal.leafL);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PARTICLES
+// ═══════════════════════════════════════════════════════════════════════════
+const MAX_LEAVES=12,MAX_SNOW=20,MAX_PETALS=8,MAX_FIREFLIES=8,MAX_TOTAL=35;
+let pool=[];
+
+function tickParticles(season,phase,animT){
+  pool=pool.filter(p=>p.life>.02&&p.y<H+12);
+  pool.forEach(p=>{
+    p.x+=p.vx; p.y+=p.vy;
+    if(p.ff) p.life=.5+.5*Math.sin(animT*2+p.phase);
+    else p.life-=.0025;
+  });
+  if(!state.particles||pool.length>=MAX_TOTAL)return;
+  const lc=pool.filter(p=>p.type==='leaf').length;
+  const sc=pool.filter(p=>p.type==='snow').length;
+  const pc=pool.filter(p=>p.type==='petal').length;
+  const fc=pool.filter(p=>p.ff).length;
+  const r=Math.random;
+  if(season==='autumn'&&lc<MAX_LEAVES&&r()<.07) spawnLeaf();
+  if(season==='winter'&&sc<MAX_SNOW&&r()<.09)   spawnSnow();
+  if(season==='spring'&&pc<MAX_PETALS&&r()<.035) spawnPetal();
+  if(season==='summer'&&phase==='night'&&fc<MAX_FIREFLIES&&r()<.012) spawnFirefly();
+}
+function spawnLeaf(){pool.push({x:Math.random()*W,y:-8,vx:(Math.random()-.5)*.9,vy:.5+Math.random()*.9,life:1,col:Math.random()<.5?'#c06818':'#e09020',sz:3,type:'leaf'});}
+function spawnSnow(){pool.push({x:Math.random()*W,y:-5,vx:(Math.random()-.5)*.25,vy:.3+Math.random()*.5,life:1,col:Math.random()<.4?'#d8eef8':'#c0d8e8',sz:Math.random()<.25?2:1,type:'snow'});}
+function spawnPetal(){pool.push({x:Math.random()*W,y:Math.random()*H*.5,vx:(Math.random()-.5)*.6,vy:-.25-Math.random()*.45,life:1,col:Math.random()<.6?'#ffb3c8':'#ffe0ea',sz:2,type:'petal'});}
+function spawnFirefly(){pool.push({x:W*.1+Math.random()*W*.8,y:H*.4+Math.random()*H*.35,vx:(Math.random()-.5)*.2,vy:(Math.random()-.5)*.15,life:Math.random(),col:'#f0f060',sz:1,ff:true,phase:Math.random()*Math.PI*2});}
+
+function drawParticles(){
+  partX.clearRect(0,0,W,H);
+  pool.forEach(p=>{
+    const a=Math.max(0,p.life)*.88;
+    if(p.ff){
+      partX.fillStyle=`rgba(240,240,96,${p.life*.9})`;
+      partX.fillRect(Math.round(p.x),Math.round(p.y),2,2);
+      partX.fillStyle=`rgba(240,240,96,${p.life*.3})`;
+      partX.fillRect(Math.round(p.x)-1,Math.round(p.y)-1,4,4);
+    } else {
+      partX.fillStyle=p.col;
+      partX.globalAlpha=a;
+      partX.fillRect(Math.round(p.x),Math.round(p.y),p.sz,p.sz);
+      partX.globalAlpha=1;
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  UI UPDATE
+// ═══════════════════════════════════════════════════════════════════════════
+const SEASON_LABELS={spring:'Spring 🌸',summer:'Summer ☀️',autumn:'Autumn 🍂',winter:'Winter ❄️'};
+const PHASE_LABELS={dawn:'Dawn',day:'Day',dusk:'Dusk',night:'Night 🌙'};
+let lastMsg='', lastDay=-1;
+
+function updateUI(rawDays, progress, season, phase, now){
+  document.getElementById('dayNum').textContent=rawDays+' DAYS';
+  document.getElementById('breakdown').textContent=breakdown(rawDays);
+  const pct=Math.min(100,progress*100);
+  document.getElementById('pctText').textContent=
+    pct>=100?'Journey complete 🌳':pct.toFixed(1)+'% of our 10-year journey';
+  document.getElementById('pbar').style.width=Math.min(100,pct)+'%';
+  document.getElementById('badge').textContent=
+    SEASON_LABELS[season]+' · '+PHASE_LABELS[phase];
+
+  const msg=getMsg(rawDays, now);
+  if(msg!==lastMsg){
+    const el=document.getElementById('msgEl');
+    el.style.opacity=0;
+    setTimeout(()=>{ el.textContent='\u201c'+msg+'\u201d'; el.style.opacity=1; },350);
+    lastMsg=msg;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MAIN LOOP
+// ═══════════════════════════════════════════════════════════════════════════
+let animT=0;
+
+// Midnight timer — updates automatically while app is open
+function scheduleMidnight(){
+  const now=new Date();
+  const next=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1);
+  setTimeout(()=>{ lastDay=-1; scheduleMidnight(); }, next-now);
+}
+scheduleMidnight();
+
+// Resume on visibility change (tab/app back to foreground)
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible') lastDay=-1;
+});
+
+function loop(){
+  animT+=0.018;
+  const now=getRealNow();
+  const season=getSeason(now);
+  const phase=getPhase(now.getHours());
+  // Compute rawDays fresh from real clock every frame
+  const startMidnight=new Date(START.getFullYear(),START.getMonth(),START.getDate());
+  const todayMidnight=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const rawDays=Math.max(0,Math.round((todayMidnight-startMidnight)/86400000));
+  const progress=Math.min(1,rawDays/TOTAL_DAYS);
+
+  drawSky(season,phase,animT,rawDays);
+  tickParticles(season,phase,animT);
+  drawParticles();
+  drawTree(progress,season,animT);
+  updateUI(rawDays,progress,season,phase,now);
+
+  requestAnimationFrame(loop);
+}
+loop();
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  LONG PRESS → MEMORY RINGS
+// ═══════════════════════════════════════════════════════════════════════════
+let longPressTimer=null;
+document.getElementById('treeWrap').addEventListener('touchstart',e=>{
+  longPressTimer=setTimeout(()=>openRings(),600);
+},{passive:true});
+document.getElementById('treeWrap').addEventListener('touchend',()=>{
+  clearTimeout(longPressTimer);
+},{passive:true});
+document.getElementById('treeWrap').addEventListener('touchmove',()=>{
+  clearTimeout(longPressTimer);
+},{passive:true});
+// Mouse fallback
+document.getElementById('treeWrap').addEventListener('mousedown',()=>{
+  longPressTimer=setTimeout(()=>openRings(),600);
+});
+document.getElementById('treeWrap').addEventListener('mouseup',()=>clearTimeout(longPressTimer));
+
+function openRings(){
+  const startMidnight=new Date(START.getFullYear(),START.getMonth(),START.getDate());
+  const todayMidnight=new Date();todayMidnight.setHours(0,0,0,0);
+  const rawDays=Math.max(0,Math.round((todayMidnight-startMidnight)/86400000));
+  // Count completed years
+  let completedYears=0;
+  for(let y=1;y<=10;y++){
+    const anniv=new Date(START.getFullYear()+y,START.getMonth(),START.getDate());
+    if(todayMidnight>=anniv) completedYears=y;
+  }
+  const list=document.getElementById('ringsList');
+  list.innerHTML='';
+  for(let i=0;i<10;i++){
+    const yr=i+1, done=yr<=completedYears, cur=yr===completedYears+1;
+    list.innerHTML+=`
+      <div class="ring-row">
+        <div class="ring-dot${done?' done':cur?' current':''}">
+          <span style="${done?'':'opacity:.3'}">${RING_ICONS[i]}</span>
+        </div>
+        <div class="ring-info">
+          <div class="ring-yr${done?' done':''}">Year ${yr}</div>
+          <div class="ring-lbl${done?' done':''}">${RING_LABELS[i]}</div>
+        </div>
+        ${done?'<span style="color:#ffc850;font-size:7px">●</span>':cur?'<span style="color:rgba(240,232,208,.3);font-size:10px">○</span>':''}
+      </div>`;
+  }
+  document.getElementById('ringsPanel').classList.add('open');
+  document.getElementById('overlay').classList.add('show');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SETTINGS
+// ═══════════════════════════════════════════════════════════════════════════
+function openSett(){
+  document.getElementById('togPart').className='toggle'+(state.particles?' on':'');
+  document.getElementById('togAnim').className='toggle'+(state.animations?' on':'');
+  document.getElementById('settPanel').classList.add('open');
+  document.getElementById('overlay').classList.add('show');
+}
+function closeSett(){
+  document.getElementById('settPanel').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+function closeAll(){
+  document.getElementById('settPanel').classList.remove('open');
+  document.getElementById('ringsPanel').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+function toggleSetting(key){
+  state[key]=!state[key];
+  if(!state.particles) pool=[];
+  saveSettings();
+  document.getElementById('togPart').className='toggle'+(state.particles?' on':'');
+  document.getElementById('togAnim').className='toggle'+(state.animations?' on':'');
+}
+function confirmReset(){
+  if(confirm('Reset the app? This will clear all settings. The tree will still grow from 13 May 2024.')){
+    localStorage.removeItem('gt_settings');
+    state.particles=true; state.animations=true;
+    closeSett();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  iOS INSTALL HINT
+// ═══════════════════════════════════════════════════════════════════════════
+const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone=window.navigator.standalone;
+const dismissed=localStorage.getItem('gt_install_dismissed');
+if(isIOS && !isStandalone && !dismissed){
+  setTimeout(()=>document.getElementById('installBanner').classList.add('show'),2000);
+}
+function dismissInstall(){
+  document.getElementById('installBanner').classList.remove('show');
+  localStorage.setItem('gt_install_dismissed','1');
+}
+</script>
+<script>if("serviceWorker"in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{});});}</script></body>
+</html>
