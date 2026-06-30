@@ -1,9 +1,9 @@
-// sw.js — Service Worker for offline support
-const CACHE = 'growing-together-v1';
+const CACHE = 'growing-together-v2';
 const ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/couple.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
 ];

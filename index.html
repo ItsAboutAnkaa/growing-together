@@ -209,6 +209,41 @@
     #installBanner.show{display:flex}
     .install-text{font-size:12px;color:rgba(240,232,208,.6);line-height:1.5;flex:1}
     .install-close{font-size:20px;color:rgba(240,232,208,.3);cursor:pointer;padding:4px}
+
+  /* ── Birthday ── */
+  #bdayOverlay{display:none;position:fixed;inset:0;z-index:6;pointer-events:none}
+  #bdayCanvas{position:absolute;inset:0;width:100%;height:100%}
+  #fwCanvas{position:fixed;inset:0;width:100%;height:100%;z-index:7;pointer-events:none;display:none}
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,700&family=Vazirmatn:wght@300;400&display=swap');
+  .bday-text{
+    display:none;position:fixed;z-index:15;pointer-events:none;
+    top:max(env(safe-area-inset-top,0px),16px);left:0;right:0;text-align:center;
+    font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:700;
+    font-size:clamp(22px,6vw,42px);
+    color:transparent;
+    background:linear-gradient(135deg,#ffd6a0 0%,#ffe8c0 35%,#fff4e0 55%,#ffd080 80%,#ffb850 100%);
+    -webkit-background-clip:text;background-clip:text;
+    text-shadow:none;
+    filter:drop-shadow(0 0 18px rgba(255,190,60,.65)) drop-shadow(0 0 36px rgba(255,140,20,.3));
+    animation:hbPulse 3s ease-in-out infinite;
+    line-height:1.25;letter-spacing:.5px;
+    padding:0 12px;
+  }
+  .bday-sub{
+    display:block;
+    font-family:'Vazirmatn','Tahoma',sans-serif;
+    font-style:normal;font-weight:300;
+    font-size:clamp(14px,3.8vw,22px);
+    color:transparent;
+    background:linear-gradient(135deg,#ffcce0 0%,#ffb3cf 50%,#ff8fb8 100%);
+    -webkit-background-clip:text;background-clip:text;
+    margin-top:6px;letter-spacing:1px;
+    filter:drop-shadow(0 0 12px rgba(255,140,190,.5));
+  }
+  @keyframes hbPulse{
+    0%,100%{opacity:.9;transform:scale(1) translateY(0)}
+    50%{opacity:1;transform:scale(1.025) translateY(-2px)}
+  }
   </style>
 </head>
 <body>
@@ -270,6 +305,16 @@
     Install this app: tap <strong>Share ↑</strong> then <strong>"Add to Home Screen"</strong>
   </div>
   <div class="install-close" onclick="dismissInstall()">✕</div>
+</div>
+
+<!-- Birthday overlay -->
+<div id="bdayOverlay">
+  <canvas id="bdayCanvas"></canvas>
+</div>
+<canvas id="fwCanvas"></canvas>
+<div class="bday-text" id="bdayText">
+  یک پری زاده شد — پریسا 🌸
+  <span class="bday-sub">تولدت مبارک عشقم ✨</span>
 </div>
 
 <script>
@@ -573,6 +618,19 @@ function getRawElapsed(){
 //  MESSAGES
 // ═══════════════════════════════════════════════════════════════════════════
 function getMsg(rawDays, date){
+  // Birthday: 1 July — special message pool
+  if(date.getMonth()===6 && date.getDate()===1){
+    const bdayMsgs=[
+      'یک پری زاده شد — پریسا 🌸',
+      'تولدت مبارک عشقم ✨',
+      'امروز روز توئه، همیشه 💛',
+      'هر روز بهتر از دیروز 🌺',
+      'تو زیباترین فصل منی 🌸',
+    ];
+    const epoch=new Date(2000,0,1);
+    const ds=Math.floor((date-epoch)/86400000);
+    return bdayMsgs[ds % bdayMsgs.length];
+  }
   if(MILESTONES[rawDays]) return MILESTONES[rawDays];
   if(date.getDate()===13 && date.getMonth()===4 && date.getFullYear()>2024){
     return 'Year '+(date.getFullYear()-2024)+' — still growing together 🌸';
@@ -863,22 +921,211 @@ document.addEventListener('visibilitychange',()=>{
 
 function loop(){
   animT+=0.018;
+
   const now=getRealNow();
   const season=getSeason(now);
   const phase=getPhase(now.getHours());
-  // Compute rawDays fresh from real clock every frame
   const startMidnight=new Date(START.getFullYear(),START.getMonth(),START.getDate());
   const todayMidnight=new Date(now.getFullYear(),now.getMonth(),now.getDate());
   const rawDays=Math.max(0,Math.round((todayMidnight-startMidnight)/86400000));
   const progress=Math.min(1,rawDays/TOTAL_DAYS);
 
+  // Birthday check — 1 July every year (دوست دخترت)
+  const isBday = (now.getMonth()===6 && now.getDate()===1);
+
   drawSky(season,phase,animT,rawDays);
   tickParticles(season,phase,animT);
   drawParticles();
   drawTree(progress,season,animT);
+
+  if(isBday){
+    tickBdayFireworks();
+    drawBdayFireworks();
+    drawBdayCouple(animT);
+  }
+
   updateUI(rawDays,progress,season,phase,now);
 
+  // Show/hide birthday overlay
+  const bdayOverlay=document.getElementById('bdayOverlay');
+  const bdayText=document.getElementById('bdayText');
+  const fwCanvas=document.getElementById('fwCanvas');
+  if(isBday){
+    bdayOverlay.style.display='block';
+    bdayText.style.display='block';
+    fwCanvas.style.display='block';
+  } else {
+    bdayOverlay.style.display='none';
+    bdayText.style.display='none';
+    fwCanvas.style.display='none';
+  }
+
   requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  BIRTHDAY SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════
+const BDAY_COLS=['#ff4f8b','#ffe040','#5fc8ff','#7fff6a','#c87aff','#ff9928','#ffffa0','#40f8d8'];
+let bdayFW=[], bdayFWTimer=0;
+let coupleImg=null, coupleLoaded=false;
+
+// Load couple image once
+(function loadCouple(){
+  const img=new Image();
+  img.onload=()=>{coupleImg=img;coupleLoaded=true;};
+  img.onerror=()=>{coupleLoaded=false;};
+  img.src='couple.png';
+})();
+
+function spawnBdayFirework(){
+  const W=window.innerWidth, H=window.innerHeight;
+  const fx=W*0.05+Math.random()*W*0.90;
+  const fy=H*0.03+Math.random()*H*0.38;
+  const col=BDAY_COLS[Math.floor(Math.random()*BDAY_COLS.length)];
+  const arms=30+Math.floor(Math.random()*10);
+  const particles=[];
+  for(let i=0;i<arms;i++){
+    const angle=(i/arms)*Math.PI*2;
+    const speed=1.4+Math.random()*2.8;
+    particles.push({x:fx,y:fy,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:1,col,sz:Math.random()<0.25?3:2});
+  }
+  // sparkle trail
+  for(let i=0;i<8;i++){
+    const a=Math.random()*Math.PI*2;
+    particles.push({x:fx,y:fy,vx:Math.cos(a)*(0.3+Math.random()),vy:Math.sin(a)*(0.3+Math.random()),life:1,col:'#ffffff',sz:1});
+  }
+  bdayFW.push({particles,cx:fx,cy:fy,col});
+}
+
+function tickBdayFireworks(){
+  bdayFWTimer+=0.018;
+  if(bdayFWTimer>1.6+Math.random()*0.8){bdayFWTimer=0;spawnBdayFirework();}
+  bdayFW=bdayFW.filter(f=>f.particles.length>0);
+  bdayFW.forEach(f=>{
+    f.particles.forEach(p=>{
+      p.x+=p.vx; p.y+=p.vy;
+      p.vx*=0.96; p.vy=p.vy*0.96+0.05;
+      p.life-=0.018;
+    });
+    f.particles=f.particles.filter(p=>p.life>0);
+  });
+}
+
+function drawBdayFireworks(){
+  const fc=document.getElementById('fwCanvas');
+  if(!fc)return;
+  const W=window.innerWidth,H=window.innerHeight;
+  fc.width=W;fc.height=H;
+  const ctx=fc.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+  bdayFW.forEach(f=>{
+    f.particles.forEach(p=>{
+      ctx.globalAlpha=Math.max(0,p.life)*0.92;
+      ctx.fillStyle=p.col;
+      ctx.fillRect(Math.round(p.x),Math.round(p.y),p.sz,p.sz);
+      if(p.sz>1){
+        ctx.globalAlpha=Math.max(0,p.life)*0.28;
+        ctx.fillRect(Math.round(p.x)-1,Math.round(p.y)-1,p.sz+2,p.sz+2);
+      }
+    });
+    // centre glow
+    ctx.globalAlpha=0.18;
+    ctx.fillStyle=f.col;
+    ctx.fillRect(Math.round(f.cx)-6,Math.round(f.cy)-6,12,12);
+  });
+  ctx.globalAlpha=1;
+}
+
+// Confetti pool (reused each frame)
+const bdayConfetti=[];
+for(let i=0;i<55;i++){
+  bdayConfetti.push({
+    x:Math.random()*800, y:Math.random()*900,
+    vx:(Math.random()-.5)*0.55, vy:0.4+Math.random()*0.6,
+    col:BDAY_COLS[Math.floor(Math.random()*BDAY_COLS.length)],
+    sz:Math.random()<0.28?6:4,
+    phase:Math.random()*Math.PI*2,
+    heart:Math.random()<0.22,
+  });
+}
+
+function drawBdayCouple(animT){
+  const bc=document.getElementById('bdayCanvas');
+  if(!bc)return;
+  const W=window.innerWidth, H=window.innerHeight;
+  bc.width=W; bc.height=H;
+  const ctx=bc.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+
+  // ── Confetti ────────────────────────────────────────────────
+  bdayConfetti.forEach(c=>{
+    c.x+=c.vx; c.y+=c.vy;
+    if(c.y>H+10){c.y=-10;c.x=Math.random()*W;}
+    const wx=Math.sin(animT*2.5+c.phase)*5;
+    ctx.fillStyle=c.col;
+    if(c.heart){
+      const hx=Math.round(c.x+wx),hy=Math.round(c.y),s=c.sz;
+      ctx.fillRect(hx,hy,s,s); ctx.fillRect(hx+s,hy,s,s);
+      ctx.fillRect(hx-Math.floor(s/2),hy+s,s*3,s);
+      ctx.fillRect(hx,hy+s*2,s*2,s);
+    } else {
+      ctx.fillRect(Math.round(c.x+wx),Math.round(c.y),c.sz,c.sz);
+    }
+  });
+
+  // ── Couple image ─────────────────────────────────────────────
+  if(!coupleLoaded || !coupleImg) return;
+
+  // Scale couple to fit nicely — bottom of screen
+  const targetH = Math.min(H*0.78, W*0.85);
+  const ratio   = targetH / coupleImg.naturalHeight;
+  const targetW = coupleImg.naturalWidth * ratio;
+  const px      = (W - targetW) / 2;
+  const py      = H - targetH - 5;
+
+  // ── Dance: rotate only upper body of guy (right side, above table) ──
+  // Approximate splits (ratio of couple image):
+  const guyColStart = targetW * 0.50;   // guy starts 50% across
+  const tableRow    = targetH * 0.46;   // table top at ~46% height
+
+  // Draw girl + table + lower portion of guy (untouched)
+  ctx.save();
+  // Clip to everything EXCEPT guy's upper body
+  ctx.beginPath();
+  // Full rectangle minus top-right (guy upper body)
+  ctx.rect(0, py, guyColStart+px, H);                          // left half full
+  ctx.rect(px+guyColStart, py+tableRow, targetW, H);           // right half only below table
+  ctx.clip();
+  ctx.drawImage(coupleImg, px, py, targetW, targetH);
+  ctx.restore();
+
+  // Draw rotated upper body of guy on top
+  const danceAngle = Math.sin(animT * 3.5) * 7 * (Math.PI/180); // oscillates ±7°
+  const pivotX = px + guyColStart + (targetW - guyColStart)/2;
+  const pivotY = py + tableRow;
+
+  ctx.save();
+  ctx.translate(pivotX, pivotY);
+  ctx.rotate(danceAngle);
+  ctx.translate(-pivotX, -pivotY);
+
+  // clip to only guy's upper body region
+  ctx.beginPath();
+  ctx.rect(px + guyColStart, py, targetW - guyColStart, tableRow + 2);
+  ctx.clip();
+  ctx.drawImage(coupleImg, px, py, targetW, targetH);
+  ctx.restore();
+
+  // Candle warm glow over cake area
+  const cakeCX = px + targetW * 0.46;
+  const cakeCY = py + targetH * 0.52;
+  const glow   = ctx.createRadialGradient(cakeCX,cakeCY,0,cakeCX,cakeCY,targetW*0.18);
+  const gAlpha = 0.10 + Math.sin(animT*5)*0.03;
+  glow.addColorStop(0, `rgba(255,160,40,${gAlpha})`);
+  glow.addColorStop(1, 'rgba(255,160,40,0)');
+  ctx.fillStyle=glow;
+  ctx.fillRect(cakeCX-targetW*0.2, cakeCY-targetH*0.12, targetW*0.4, targetH*0.16);
 }
 loop();
 
