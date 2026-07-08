@@ -313,8 +313,8 @@
 </div>
 <canvas id="fwCanvas"></canvas>
 <div class="bday-text" id="bdayText">
-  یک پری زاده شد — پریسا 🌸
-  <span class="bday-sub">تولدت مبارک عشقم ✨</span>
+ شما امر کن و من اطلاعت
+  <span class="bday-sub">تا یک ماه برنامه همین جوریه</span>
 </div>
 
 <script>
@@ -621,7 +621,7 @@ function getMsg(rawDays, date){
   // Birthday: 1 July — special message pool
   if(date.getMonth()===6 && date.getDate()===1){
     const bdayMsgs=[
-      'یک پری زاده شد — پریسا 🌸',
+      'شما امر کن من اطاعت',
       'تولدت مبارک عشقم ✨',
       'امروز روز توئه، همیشه 💛',
       'هر روز بهتر از دیروز 🌺',
@@ -931,7 +931,7 @@ function loop(){
   const progress=Math.min(1,rawDays/TOTAL_DAYS);
 
   // Birthday check — 1 July every year (دوست دخترت)
-  const isBday = (now.getMonth()===6 && now.getDate()===1);
+  const isBday = (now.getMonth()===6 && now.getDate()<= 30);
 
   drawSky(season,phase,animT,rawDays);
   tickParticles(season,phase,animT);
