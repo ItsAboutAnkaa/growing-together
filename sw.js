@@ -1,9 +1,11 @@
-const CACHE = 'growing-together-v2';
+const CACHE = 'growing-together-v4';
 const ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/couple.png',
+  '/scenery.js',
+  '/valentine.js',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
 ];

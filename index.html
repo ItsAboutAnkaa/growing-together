@@ -27,8 +27,8 @@
     #skyCanvas,#partCanvas{
       position:absolute;inset:0;width:100%;height:100%;
     }
-    #skyCanvas{z-index:1}
-    #partCanvas{z-index:2;pointer-events:none}
+    #skyCanvas{z-index:1;image-rendering:pixelated;image-rendering:crisp-edges}
+    #partCanvas{z-index:2;pointer-events:none;image-rendering:pixelated;image-rendering:crisp-edges}
     /* Tree canvas wrapper — centred, touch target >= 48px */
     #treeWrap{
       position:relative;z-index:3;
@@ -210,6 +210,36 @@
     .install-text{font-size:12px;color:rgba(240,232,208,.6);line-height:1.5;flex:1}
     .install-close{font-size:20px;color:rgba(240,232,208,.3);cursor:pointer;padding:4px}
 
+  /* ── Valentine's Day (14 Feb) ── */
+  #valCanvas{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;display:none;image-rendering:pixelated;image-rendering:crisp-edges}
+  #valGlow{
+    display:none;position:fixed;inset:0;z-index:5;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 42%,rgba(255,60,120,0) 52%,rgba(255,60,130,.2) 100%);
+    animation:valBeat 1.8s ease-in-out infinite;
+  }
+  @keyframes valBeat{0%{opacity:.55}8%{opacity:1}16%{opacity:.6}30%{opacity:.95}46%{opacity:.55}100%{opacity:.5}}
+  #valGlow.still{animation:none;opacity:.7}
+  @media (prefers-reduced-motion:reduce){#valGlow{animation:none;opacity:.7}}
+  #valBanner{
+    display:none;position:fixed;z-index:15;pointer-events:none;
+    top:max(env(safe-area-inset-top,0px),14px);left:0;right:0;text-align:center;padding:0 12px;
+    font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:700;
+    font-size:clamp(20px,5.6vw,38px);line-height:1.2;letter-spacing:.5px;
+    color:transparent;
+    background:linear-gradient(135deg,#ffc2d6 0%,#fff0f5 40%,#ff9fbf 70%,#ff6f9f 100%);
+    -webkit-background-clip:text;background-clip:text;
+    filter:drop-shadow(0 0 14px rgba(255,80,140,.7)) drop-shadow(0 0 30px rgba(255,60,120,.35));
+    animation:hbPulse 3s ease-in-out infinite;
+  }
+  .val-sub{
+    display:block;font-family:'Vazirmatn','Tahoma',sans-serif;font-style:normal;font-weight:400;
+    font-size:clamp(13px,3.6vw,20px);color:transparent;margin-top:4px;letter-spacing:.5px;
+    background:linear-gradient(135deg,#ffd0e0 0%,#ffa3c4 60%,#ff7aa8 100%);
+    -webkit-background-clip:text;background-clip:text;
+  }
+  #ui.val .day-num{text-shadow:0 0 22px rgba(255,90,150,.5)}
+  #ui .msg.val{color:#ffc9dc}
+
   /* ── Birthday ── */
   #bdayOverlay{display:none;position:fixed;inset:0;z-index:6;pointer-events:none}
   #bdayCanvas{position:absolute;inset:0;width:100%;height:100%}
@@ -250,6 +280,7 @@
 <div id="app">
   <canvas id="skyCanvas"></canvas>
   <canvas id="partCanvas"></canvas>
+  <canvas id="valCanvas"></canvas>
 
   <div id="treeWrap">
     <canvas id="treeCanvas"></canvas>
@@ -307,6 +338,10 @@
   <div class="install-close" onclick="dismissInstall()">✕</div>
 </div>
 
+<!-- Valentine's Day overlay (14 Feb only) -->
+<div id="valGlow"></div>
+<div id="valBanner">♥ Happy Valentine's Day ♥<span class="val-sub">ولنتاینت مبارک عشق من</span></div>
+
 <!-- Birthday overlay -->
 <div id="bdayOverlay">
   <canvas id="bdayCanvas"></canvas>
@@ -317,6 +352,8 @@
   <span class="bday-sub">اگه اینو میبینی باید برام یه عکس بفرستی یک رو نشون بدی</span>
 </div>
 
+<script src="scenery.js"></script>
+<script src="valentine.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 //  CONSTANTS
@@ -577,6 +614,10 @@ function saveSettings(){
   localStorage.setItem('gt_settings',JSON.stringify({particles:state.particles,animations:state.animations}));
 }
 loadSettings();
+// Motion is allowed only if the in-app Animations setting is on AND the OS doesn't ask for reduced motion
+const reduceMQ=window.matchMedia?window.matchMedia('(prefers-reduced-motion: reduce)'):{matches:false};
+function motionOK(){ return state.animations && !reduceMQ.matches; }
+let fxT=0;   // seconds of scenery animation (smoke, window flicker); frozen when motion is off
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  CANVAS SETUP
@@ -599,9 +640,16 @@ function layout(){
   treeC.width=treeC.height=treeSize;
   document.getElementById('treeWrap').style.width=treeSize+'px';
   document.getElementById('treeWrap').style.height=treeSize+'px';
+  partS=window.GTScenery?GTScenery.pixelScale(W,H):2;   // one pixel size for scenery + particles
+  valGeom={baseY:document.getElementById('treeWrap').getBoundingClientRect().top+treeSize*.9,treeSize:treeSize};
+  invalidateScenes();
 }
+let partS=2, sceneCache={}, sceneFailed=false, valOn=false, valShown=false, valGeom={baseY:0,treeSize:0};   // declared before the first layout() call
+function invalidateScenes(){ sceneCache={}; }
 layout();
 window.addEventListener('resize',()=>{layout();});
+// Web font changes the countdown block height → re-measure the readability shade
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>invalidateScenes());
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  TIME  (reads only from system clock — no user manipulation possible)
@@ -631,6 +679,7 @@ function getMsg(rawDays, date){
     const ds=Math.floor((date-epoch)/86400000);
     return bdayMsgs[ds % bdayMsgs.length];
   }
+  if(window.GTValentine&&GTValentine.isDay(date)) return GTValentine.message(date);   // 14 Feb
   if(MILESTONES[rawDays]) return MILESTONES[rawDays];
   if(date.getDate()===13 && date.getMonth()===4 && date.getFullYear()>2024){
     return 'Year '+(date.getFullYear()-2024)+' — still growing together 🌸';
@@ -670,7 +719,7 @@ function ease(t){return t*t*(3-2*t);}
 // ═══════════════════════════════════════════════════════════════════════════
 function drawSky(season, phase, animT, daySeed){
   const p=SKY[season][phase];
-  // Sky gradient
+  // Sky gradient (original)
   const sg=skyX.createLinearGradient(0,0,0,H*0.65);
   sg.addColorStop(0,p.t); sg.addColorStop(1,p.b);
   skyX.fillStyle=sg; skyX.fillRect(0,0,W,H);
@@ -698,10 +747,39 @@ function drawSky(season, phase, animT, daySeed){
       }
     }
   }
-  // Ground
+  if(valOn&&window.GTValentine) GTValentine.drawSky(skyX,W,H,partS,fxT,motionOK(),phase,valGeom);   // Valentine sky
+  // Ground (original)
   const gg=skyX.createLinearGradient(0,H*.60,0,H);
   gg.addColorStop(0,p.gt); gg.addColorStop(1,p.gb);
   skyX.fillStyle=gg; skyX.fillRect(0,H*.60,W,H);
+  // Autumn: fallen leaves on the ground · Winter: snow on the ground + cabin (overlay only)
+  const scene=getScene(season,phase);
+  if(scene){
+    GTScenery.drawLand(skyX,scene);
+    GTScenery.drawFX(skyX,scene,fxT,motionOK(),phase,valOn);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SEASONAL SCENERY CACHE  (autumn + winter pixel-art worlds, see scenery.js)
+// ═══════════════════════════════════════════════════════════════════════════
+// How far into autumn we are (local date) → how much of the ground is leaf-covered
+function autumnCoverage(d){
+  const start=new Date(d.getFullYear(),8,23);
+  const day=Math.max(0,Math.round((new Date(d.getFullYear(),d.getMonth(),d.getDate())-start)/86400000));
+  return Math.round(Math.min(1,.3+.7*day/80)*6)/6;
+}
+function getScene(season,phase){
+  if((season!=='autumn'&&season!=='winter')||!window.GTScenery||sceneFailed) return null;
+  const cov=season==='autumn'?autumnCoverage(getRealNow()):0;
+  const key=season+'|'+phase+'|'+cov+(valOn?'|v':'');
+  let sc=sceneCache[key];
+  if(sc) return sc;
+  try{
+    if(Object.keys(sceneCache).length>=6) sceneCache={};
+    sc=sceneCache[key]=GTScenery.buildScene({season,phase,W,H,S:partS,coverage:cov,valentine:valOn});
+    return sc;
+  }catch(e){ sceneFailed=true; console.error('scenery failed',e); return null; }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -832,16 +910,34 @@ function drawSprout(cx,base,pal,animT){
 //  PARTICLES
 // ═══════════════════════════════════════════════════════════════════════════
 const MAX_LEAVES=12,MAX_SNOW=20,MAX_PETALS=8,MAX_FIREFLIES=8,MAX_TOTAL=35;
-let pool=[];
+// Pixel-art leaves / snow (used when scenery.js is present): frame-rate independent, still modest counts
+const SC_MAX_LEAVES=15, SC_MAX_SNOW=42, SC_MAX_NEAR_SNOW=6;
+let pool=[], spawnAcc={leaf:0,snow:0}, prefilledFor=null, lastTick=0;
 
 function tickParticles(season,phase,animT){
+  const nowMs=performance.now();
+  const dt=Math.min(.1,Math.max(0,(nowMs-(lastTick||nowMs))/1000)); lastTick=nowMs;
+  const rich=!!window.GTScenery;
   pool=pool.filter(p=>p.life>.02&&p.y<H+12);
   pool.forEach(p=>{
+    if(p.upd){ p.upd(p,dt); return; }
     p.x+=p.vx; p.y+=p.vy;
     if(p.ff) p.life=.5+.5*Math.sin(animT*2+p.phase);
     else p.life-=.0025;
   });
-  if(!state.particles||pool.length>=MAX_TOTAL)return;
+  if(reduceMQ.matches){ pool=pool.filter(p=>!p.upd); return; }   // prefers-reduced-motion: nothing falls
+  if(!state.particles)return;
+  if(rich&&(season==='autumn'||season==='winter')){
+    if(prefilledFor!==season){            // start with a scattering already in the air
+      prefilledFor=season;
+      for(let i=0;i<(season==='autumn'?7:22);i++) season==='autumn'?spawnLeaf(true):spawnSnow(true);
+    }
+    let lc=0,sc=0; for(const p of pool){ if(p.type==='leaf'&&p.upd)lc++; else if(p.type==='snow'&&p.upd)sc++; }
+    if(season==='autumn'){ spawnAcc.leaf+=dt*.9; while(spawnAcc.leaf>=1){ spawnAcc.leaf--; if(lc<SC_MAX_LEAVES){ spawnLeaf(false); lc++; } } }
+    else { spawnAcc.snow+=dt*4.2; while(spawnAcc.snow>=1){ spawnAcc.snow--; if(sc<SC_MAX_SNOW){ spawnSnow(false); sc++; } } }
+    return;
+  }
+  if(pool.length>=MAX_TOTAL)return;
   const lc=pool.filter(p=>p.type==='leaf').length;
   const sc=pool.filter(p=>p.type==='snow').length;
   const pc=pool.filter(p=>p.type==='petal').length;
@@ -852,16 +948,81 @@ function tickParticles(season,phase,animT){
   if(season==='spring'&&pc<MAX_PETALS&&r()<.035) spawnPetal();
   if(season==='summer'&&phase==='night'&&fc<MAX_FIREFLIES&&r()<.012) spawnFirefly();
 }
-function spawnLeaf(){pool.push({x:Math.random()*W,y:-8,vx:(Math.random()-.5)*.9,vy:.5+Math.random()*.9,life:1,col:Math.random()<.5?'#c06818':'#e09020',sz:3,type:'leaf'});}
-function spawnSnow(){pool.push({x:Math.random()*W,y:-5,vx:(Math.random()-.5)*.25,vy:.3+Math.random()*.5,life:1,col:Math.random()<.4?'#d8eef8':'#c0d8e8',sz:Math.random()<.25?2:1,type:'snow'});}
+// ── Autumn leaf: pixel sprite that tumbles, sways, sometimes gusts across, then settles and fades ──
+function updLeaf(p,dt){
+  p.t+=dt;
+  if(p.rest>0){ p.rest-=dt; if(p.rest<=0) p.fade=true; }
+  else if(!p.landed){
+    p.y+=p.vy*dt; p.x0+=p.vx*dt;
+    p.x=p.x0+Math.sin(p.t*p.swayW+p.ph)*p.swayA;
+    if(p.y>=p.landY){ p.landed=true; p.rest=1.4+Math.random()*1.6; p.frame=(p.frame&4)?5:1; }
+  }
+  if(p.fade) p.life-=dt/1.6;
+  if(p.x<-24||p.x>W+24) p.life=0;
+}
+function spawnLeaf(pre){
+  const sets=window.GTScenery&&GTScenery.leafSprites();
+  if(!sets){ pool.push({x:Math.random()*W,y:-8,vx:(Math.random()-.5)*.9,vy:.5+Math.random()*.9,life:1,col:Math.random()<.5?'#c06818':'#e09020',sz:3,type:'leaf'}); return; }
+  const near=Math.random()<.55, gust=!pre&&Math.random()<.12, dir=Math.random()<.5?1:-1;
+  const cand=sets.filter(s=>near?!s.small:s.small);
+  const spr=cand[Math.floor(Math.random()*cand.length)];
+  const g=document.getElementById('treeWrap').getBoundingClientRect();
+  const gTop=g.top+treeSize*.9+8;
+  const x0=gust?(dir>0?-14:W+14):Math.random()*W;
+  pool.push({
+    type:'leaf',upd:updLeaf,spr,near,t:Math.random()*10,
+    x0,x:x0,y:pre?Math.random()*H*.55:-10-Math.random()*30,
+    vy:(near?24:14)+Math.random()*(near?20:10),
+    vx:gust?dir*(48+Math.random()*34):(Math.random()-.5)*7,
+    swayA:near?9+Math.random()*16:4+Math.random()*7,swayW:.7+Math.random()*.9,ph:Math.random()*6.28,
+    fr:.8+Math.random()*1.1,landY:gTop+Math.random()*(H*.96-gTop),
+    life:1,a:near?.95:.62,frame:0,landed:false,rest:0,fade:false
+  });
+}
+// ── Winter snow: three depths (far/small, mid, near/large cross), gentle drift ──
+function updSnow(p,dt){
+  p.t+=dt;
+  p.y+=p.vy*dt; p.x0+=p.lean*dt;
+  p.x=p.x0+Math.sin(p.t*p.swayW+p.ph)*p.swayA;
+}
+function spawnSnow(pre){
+  const sets=window.GTScenery;
+  if(!sets){ pool.push({x:Math.random()*W,y:-5,vx:(Math.random()-.5)*.25,vy:.3+Math.random()*.5,life:1,col:Math.random()<.4?'#d8eef8':'#c0d8e8',sz:Math.random()<.25?2:1,type:'snow'}); return; }
+  const k=Math.random();
+  let cls=k<.48?0:k<.84?1:2;
+  if(cls===2){ let n=0; for(const q of pool) if(q.type==='snow'&&q.cls===2) n++; if(n>=SC_MAX_NEAR_SNOW) cls=1; }
+  const x0=Math.random()*W;
+  pool.push({
+    type:'snow',upd:updSnow,cls,t:Math.random()*10,
+    x0,x:x0,y:pre?Math.random()*H:-8,
+    vy:[18,32,58][cls]*(.8+Math.random()*.4),lean:[1.5,3,6][cls]*(Math.random()*.8+.4),
+    swayA:[3,6,11][cls]*(.6+Math.random()*.8),swayW:.45+Math.random()*.7,ph:Math.random()*6.28,
+    life:1,a:[.5,.82,.95][cls]
+  });
+}
 function spawnPetal(){pool.push({x:Math.random()*W,y:Math.random()*H*.5,vx:(Math.random()-.5)*.6,vy:-.25-Math.random()*.45,life:1,col:Math.random()<.6?'#ffb3c8':'#ffe0ea',sz:2,type:'petal'});}
 function spawnFirefly(){pool.push({x:W*.1+Math.random()*W*.8,y:H*.4+Math.random()*H*.35,vx:(Math.random()-.5)*.2,vy:(Math.random()-.5)*.15,life:Math.random(),col:'#f0f060',sz:1,ff:true,phase:Math.random()*Math.PI*2});}
 
 function drawParticles(){
   partX.clearRect(0,0,W,H);
+  partX.imageSmoothingEnabled=false;
+  const PS=partS;
   pool.forEach(p=>{
     const a=Math.max(0,p.life)*.88;
-    if(p.ff){
+    if(p.upd&&p.type==='leaf'){
+      const fi=(p.landed||!motionOK())?(p.frame&7):(Math.floor(p.t*p.fr*8+p.ph*2)&7);   // tumble frames
+      const fr=p.spr.frames[fi];
+      partX.globalAlpha=Math.max(0,p.life)*p.a;
+      partX.drawImage(fr,Math.round(p.x/PS)*PS,Math.round(p.y/PS)*PS,fr.width*PS,fr.height*PS);
+      partX.globalAlpha=1;
+    } else if(p.upd&&p.type==='snow'){
+      const sx=Math.round(p.x/PS)*PS, sy=Math.round(p.y/PS)*PS;
+      partX.globalAlpha=p.a;
+      if(p.cls===0){ partX.fillStyle='#b8d0e8'; partX.fillRect(sx,sy,PS,PS); }
+      else if(p.cls===1){ partX.fillStyle='#e8f3fb'; partX.fillRect(sx,sy,PS,PS); }
+      else { partX.fillStyle='#ffffff'; partX.fillRect(sx-PS,sy,PS*3,PS); partX.fillRect(sx,sy-PS,PS,PS*3); }
+      partX.globalAlpha=1;
+    } else if(p.ff){
       partX.fillStyle=`rgba(240,240,96,${p.life*.9})`;
       partX.fillRect(Math.round(p.x),Math.round(p.y),2,2);
       partX.fillStyle=`rgba(240,240,96,${p.life*.3})`;
@@ -890,13 +1051,17 @@ function updateUI(rawDays, progress, season, phase, now){
     pct>=100?'Journey complete 🌳':pct.toFixed(1)+'% of our 10-year journey';
   document.getElementById('pbar').style.width=Math.min(100,pct)+'%';
   document.getElementById('badge').textContent=
-    SEASON_LABELS[season]+' · '+PHASE_LABELS[phase];
+    (valOn?'Valentine ♥':SEASON_LABELS[season])+' · '+PHASE_LABELS[phase];
 
   const msg=getMsg(rawDays, now);
   if(msg!==lastMsg){
     const el=document.getElementById('msgEl');
     el.style.opacity=0;
-    setTimeout(()=>{ el.textContent='\u201c'+msg+'\u201d'; el.style.opacity=1; },350);
+    setTimeout(()=>{
+      if(valOn){ el.dir='rtl'; el.textContent=msg; }   // Persian Valentine text reads right-to-left
+      else { el.dir=''; el.textContent='\u201c'+msg+'\u201d'; }
+      el.style.opacity=1;
+    },350);
     lastMsg=msg;
   }
 }
@@ -919,12 +1084,36 @@ document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible') lastDay=-1;
 });
 
+// Season cross-fade: the loop already re-reads the local date every frame, so a season
+// rollover (even while the app is open) just starts a short fade — no reload needed.
+// Valentine's Day (14 Feb): show/hide the overlay layers (see valentine.js)
+const valC=document.getElementById('valCanvas');
+function setValentineUI(on){
+  valC.style.display=on?'block':'none';
+  document.getElementById('valGlow').style.display=on?'block':'none';
+  document.getElementById('valBanner').style.display=on?'block':'none';
+  document.getElementById('ui').classList.toggle('val',on);
+  document.getElementById('msgEl').classList.toggle('val',on);
+  lastMsg=null;
+}
+if(window.GTValentine) GTValentine.arm(()=>valOn);
+let shownSeason=null, seasonFade=null, lastFrameMs=0;
 function loop(){
   animT+=0.018;
+  const fms=performance.now();
+  const fdt=Math.min(.1,Math.max(0,(fms-(lastFrameMs||fms))/1000)); lastFrameMs=fms;
+  if(motionOK()) fxT+=fdt;
 
   const now=getRealNow();
   const season=getSeason(now);
   const phase=getPhase(now.getHours());
+  valOn=!!(window.GTValentine&&GTValentine.isDay(now));
+  if(valOn!==valShown){ valShown=valOn; setValentineUI(valOn); invalidateScenes(); }
+  if(shownSeason===null) shownSeason=season;
+  else if(season!==shownSeason){
+    seasonFade=motionOK()?{from:shownSeason,t:0}:null;
+    shownSeason=season;
+  }
   const startMidnight=new Date(START.getFullYear(),START.getMonth(),START.getDate());
   const todayMidnight=new Date(now.getFullYear(),now.getMonth(),now.getDate());
   const rawDays=Math.max(0,Math.round((todayMidnight-startMidnight)/86400000));
@@ -933,9 +1122,17 @@ function loop(){
   // Birthday check — 1 July every year (دوست دخترت)
   const isBday = (now.getMonth()===6 && now.getDate()<= 30);
 
-  drawSky(season,phase,animT,rawDays);
+  if(seasonFade){
+    drawSky(seasonFade.from,phase,animT,rawDays);
+    skyX.globalAlpha=ease(Math.min(1,seasonFade.t));
+    drawSky(season,phase,animT,rawDays);
+    skyX.globalAlpha=1;
+    seasonFade.t+=fdt/2.6;
+    if(seasonFade.t>=1) seasonFade=null;
+  } else drawSky(season,phase,animT,rawDays);
   tickParticles(season,phase,animT);
   drawParticles();
+  if(valOn) GTValentine.frame(valC,W,H,partS,fdt,motionOK(),state.particles,fxT,valGeom);
   drawTree(progress,season,animT);
 
   if(isBday){
